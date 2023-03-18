@@ -33,9 +33,13 @@ import json
 import datetime
 import numpy as np
 import skimage.draw
+import cv2
 
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
+#LOCAL_PATH = "C:\\Users\\TIMOTHY CUIZON\\Mask_RCNN\\samples\\trees\\datasets\\trees"
+LOCAL_PATH = "/Users/hernan/Mask_RCNN_TREES/samples/trees/datasets/trees"
+LOCAL_PATH_WEIGHTS = "/Users/hernan/Mask_RCNN_TREES/samples/trees"
 
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
@@ -63,13 +67,13 @@ class TreesConfig(Config):
 
     # We use a GPU with 12GB memory, which can fit two images.
     # Adjust down if you use a smaller GPU.
-    IMAGES_PER_GPU = 2
+    IMAGES_PER_GPU = 1
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 3  # Background + balloon
 
     # Number of training steps per epoch
-    STEPS_PER_EPOCH = 100
+    STEPS_PER_EPOCH = 50
 
     # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0.9
@@ -93,7 +97,8 @@ class TreesDataset(utils.Dataset):
 
         # Train or validation dataset?
         assert subset in ["train", "val"]
-        dataset_dir = os.path.join("C:\\Users\\TIMOTHY CUIZON\\Mask_RCNN\\samples\\trees\\datasets\\trees", subset)
+        #dataset_dir = os.path.join("C:\\Users\\TIMOTHY CUIZON\\Mask_RCNN\\samples\\trees\\datasets\\trees", subset)
+        dataset_dir = os.path.join(LOCAL_PATH, subset)
 #         dataset_dir = os.path.join(dataset_dir, subset)
 
         # Load annotations
@@ -135,6 +140,23 @@ class TreesDataset(utils.Dataset):
             # the image. This is only managable since the dataset is tiny.
             image_path = os.path.join(dataset_dir, a['filename'])
             image = skimage.io.imread(image_path)
+
+            ###GABOR FILTERS
+            ksize = 10
+            sigma = 5
+            theta = 1*np.pi/2
+            lamda = 1*np.pi/4
+            gamma = 0.8
+            phi = 0.8
+
+            kernel = cv2.getGaborKernel((ksize, ksize), sigma, theta, lamda, gamma, phi, ktype=cv2.CV_32F)
+            img = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            fimg = cv2.filter2D(img, cv2.CV_8UC3, kernel)
+
+            image = fimg
+
+            ####END OF GABOR FILTERS
+
             height, width = image.shape[:2]
 
             self.add_image(
@@ -163,7 +185,28 @@ class TreesDataset(utils.Dataset):
                         dtype=np.uint8)
         for i, p in enumerate(info["polygons"]):
             # Get indexes of pixels inside the polygon and set them to 1
+            
+            ###Original Code
             rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
+            
+            ####up to here
+
+            ###new code
+            rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
+            print("mask.shape, min(mask),max(mask): {}, {},{}".format(mask.shape, np.min(mask),np.max(mask)))
+            print("rr.shape, min(rr),max(rr): {}, {},{}".format(rr.shape, np.min(rr),np.max(rr)))
+            print("cc.shape, min(cc),max(cc): {}, {},{}".format(cc.shape, np.min(cc),np.max(cc)))
+
+            ## Note that this modifies the existing array arr, instead of creating a result array
+            ## Ref: https://stackoverflow.com/questions/19666626/replace-all-elements-of-python-numpy-array-that-are-greater-than-some-value
+            rr[rr > mask.shape[0]-1] = mask.shape[0]-1
+            cc[cc > mask.shape[1]-1] = mask.shape[1]-1
+
+            print("After fixing the dirt mask, new values:")        
+            print("rr.shape, min(rr),max(rr): {}, {},{}".format(rr.shape, np.min(rr),np.max(rr)))
+            print("cc.shape, min(cc),max(cc): {}, {},{}".format(cc.shape, np.min(cc),np.max(cc)))
+            ###up to here new
+
             mask[rr, cc, i] = 1
 
         # Return mask, and array of class IDs of each instance. Since we have
@@ -198,7 +241,7 @@ def train(model):
     print("Training network heads")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=1,
+                epochs=50,
                 layers='heads')
 
 
@@ -289,7 +332,7 @@ if __name__ == '__main__':
                         help="'train' or 'splash'")
     parser.add_argument('--dataset', required=False,
                         metavar="/path/to/trees/dataset/",
-                        help='Directory of the Balloon dataset')
+                        help='Directory of the Trees dataset')
     parser.add_argument('--weights', required=True,
                         metavar="/path/to/weights.h5",
                         help="Path to weights .h5 file or 'coco'")
@@ -339,7 +382,7 @@ if __name__ == '__main__':
     # Select weights file to load
     if args.weights.lower() == "trees":
         file = "mask_rcnn_trees.h5"
-        weights_path = os.path.join("C:/Users/TIMOTHY CUIZON/Mask_RCNN/samples/trees/",file)
+        weights_path = os.path.join(LOCAL_PATH_WEIGHTS,file)
         # Download weights file
         if not os.path.exists(weights_path):
             utils.download_trained_weights(weights_path)
